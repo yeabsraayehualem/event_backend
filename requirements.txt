@@ -1,0 +1,42 @@
+# Core
+Django
+djangorestframework
+psycopg[binary]
+django-environ
+django-cors-headers
+drf-spectacular
+django-filter
+Pillow
+django-simple-history
+
+# CRM / contacts
+django-phonenumber-field
+phonenumbers
+
+# Authentication (JWT)
+djangorestframework-simplejwt
+
+# Event workflows and scheduling
+django-fsm-2
+django-recurrence
+
+# Workforce / permissions
+django-guardian
+
+# Finance (optional for multi-currency)
+django-money
+
+# Background jobs and scheduled tasks
+celery
+redis
+django-celery-beat
+django-celery-results
+
+# Development and testing
+pytest
+pytest-django
+factory-boy
+pytest-cov
+ruff
+django-debug-toolbar
+ipython
