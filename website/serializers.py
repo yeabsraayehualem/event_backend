@@ -1,6 +1,31 @@
+from decimal import MAX_EMAX
+from pickletools import read_long1
+
 from rest_framework import serializers
 
-from event.models import Package, Plan
+from event.models import Package, Plan,Content
+
+
+class ContentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Content
+        fields = ["id","name","description"]
+
+
+class PackageSerializer(serializers.ModelSerializer):
+    contents = ContentSerializer(many=True,read_only=True)
+    class Meta:
+        model = Package
+        fields = ["id", "name","contents"] 
+
+
+class GetPlans(serializers.ModelSerializer):
+    packages = PackageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Plan
+        fields = ["id", "name", "packages"]
+
 
 
 class PublicLeadSerializer(serializers.Serializer):

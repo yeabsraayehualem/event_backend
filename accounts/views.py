@@ -7,10 +7,14 @@ from rest_framework import status
 from utils.formatter import Formatter
 from utils.views import InternalView
 from rest_framework.response import Response
-from django.contrib.auth import authenticate,logout
+from django.contrib.auth import authenticate, login, logout
+from django.middleware.csrf import get_token
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 
 
+@method_decorator(ensure_csrf_cookie, name="dispatch")
 class Authenticate(APIView):
     authentication_classes = []
     permission_classes = []
@@ -46,6 +50,8 @@ class Authenticate(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
+        login(request, user)
+
         return Response(
             Formatter.success(
                 status_code=200,
@@ -54,6 +60,17 @@ class Authenticate(APIView):
             ),
             status=status.HTTP_200_OK,
         )
+
+
+class CsrfToken(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @method_decorator(ensure_csrf_cookie)
+    def get(self, request, *args, **kwargs):
+        return Response({"csrf_token": get_token(request._request)})
+
+
 class LogountView(InternalView):
     def post(self,request,*a,**kw):
         logout(request)

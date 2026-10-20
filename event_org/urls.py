@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/v1/user/",include("accounts.urls")),
     path("api/v1/crm/",include("crm.urls")),
     path("api/v1/event/", include("event.urls")),
+    path("api/v1/website/",include("website.urls"))
 ]
 
 if settings.DEBUG:

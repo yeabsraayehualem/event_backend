@@ -12,7 +12,14 @@ class IsSalesPerson(BasePermission):
     message="Access Denied. Role `Sales` is required"
 
     def has_permission(self, request, view):
-        return super().has_permission(request, view)
+        return request.user.is_authenticated and request.user.role == "sales"
+
+
+class IsSalesOrSuper(BasePermission):
+    message = "Access denied. Sales or super user role is required."
+
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in {"sales", "super"}
 
 
 class IsStaff(BasePermission):

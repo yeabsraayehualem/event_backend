@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from utils.permissions import IsSuperUser 
+from utils.permissions import IsSalesOrSuper, IsSuperUser
 from . import permissions
 class InternalView(APIView):
 
@@ -14,4 +14,4 @@ class SuperView(InternalView):
 
 
 class SalesView(InternalView):
-    permission_classes = [IsSuperUser]
+    permission_classes = [IsSalesOrSuper]
