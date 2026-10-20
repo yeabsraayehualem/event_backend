@@ -1,13 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from crm.models import Lead
-from crm.serializers import LeadsSerializer
+from crm.serializers import LeadDetailSerializer, LeadsSerializer
 from utils.formatter import Formatter
-from utils.permissions import IsSalesOrSuper
+from utils.permissions import IsLeadAssigneeOrSuper, IsSalesOrSuper
 from utils.views import SalesView
 
 
@@ -123,4 +123,17 @@ class CRMLeads(ListAPIView):
         if self.request.user.role != User.Role.SUPER:
             leads = leads.filter(assigned_sales_person=self.request.user)
         return leads.order_by("-date", "-id")
+
+
+class CRMLeadDetail(RetrieveUpdateAPIView):
+    """Retrieve or update a lead, limited to its assignee or a super user."""
+
+    serializer_class = LeadDetailSerializer
+    permission_classes = [IsSalesOrSuper, IsLeadAssigneeOrSuper]
+    lookup_url_kwarg = "lead_id"
+
+    def get_queryset(self):
+        return Lead.objects.select_related(
+            "customer", "plan", "package", "assigned_sales_person"
+        ).prefetch_related("plan__packages", "package__contents")
             

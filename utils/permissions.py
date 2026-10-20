@@ -22,6 +22,19 @@ class IsSalesOrSuper(BasePermission):
         return request.user.is_authenticated and request.user.role in {"sales", "super"}
 
 
+class IsLeadAssigneeOrSuper(BasePermission):
+    message = "Only a super user or the sales person assigned to this lead may access it."
+
+    def has_object_permission(self, request, view, obj):
+        return (
+            request.user.is_authenticated
+            and (
+                request.user.role == "super"
+                or obj.assigned_sales_person_id == request.user.pk
+            )
+        )
+
+
 class IsStaff(BasePermission):
     message="Access Denied. Role `Staff` is required"
 
