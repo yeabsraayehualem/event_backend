@@ -1,9 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
+from rest_framework.generics import ListAPIView
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from crm.models import Lead
+from crm.serializers import LeadsSerializer
 from utils.formatter import Formatter
+from utils.permissions import IsSalesOrSuper
 from utils.views import SalesView
 
 
@@ -91,3 +95,32 @@ class SalesDashboard(SalesView):
             "recent_leads": recent_leads,
             "sales_performance": sales_performance,
         }))
+
+
+
+
+
+
+class CRMLeads(ListAPIView):
+    """List leads for a status, scoped to the current sales user."""
+
+    serializer_class = LeadsSerializer
+    permission_classes = [IsSalesOrSuper]
+
+    def get_queryset(self):
+        status_value = self.request.query_params.get("status", Lead.Status.LEAD)
+        valid_statuses = {value for value, _label in Lead.Status.choices}
+        if status_value not in valid_statuses:
+            raise ValidationError({
+                "status": f"Choose one of: {', '.join(sorted(valid_statuses))}."
+            })
+
+        # Plan has a reverse one-to-many `packages` relation, so it cannot be
+        # traversed with select_related. The lead's selected package is a FK.
+        leads = Lead.objects.select_related("customer", "plan", "package").filter(
+            status=status_value
+        )
+        if self.request.user.role != User.Role.SUPER:
+            leads = leads.filter(assigned_sales_person=self.request.user)
+        return leads.order_by("-date", "-id")
+            
