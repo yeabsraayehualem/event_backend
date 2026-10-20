@@ -22,6 +22,13 @@ class IsSalesOrSuper(BasePermission):
         return request.user.is_authenticated and request.user.role in {"sales", "super"}
 
 
+class IsFinanceOrSuper(BasePermission):
+    message = "Access denied. Finance or super user role is required."
+
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in {"finance", "super"}
+
+
 class IsLeadAssigneeOrSuper(BasePermission):
     message = "Only a super user or the sales person assigned to this lead may access it."
 

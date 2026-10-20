@@ -19,6 +19,8 @@ class Lead(models.Model):
     class Status(models.TextChoices):
         LEAD = "lead", "Lead"
         CONTACTED = "contacted", "Contacted"
+        CONSULTATION_SCHEDULED = "consultation_scheduled", "Consultation Scheduled"
+        QUOTATION_SENT = "quotation_sent", "Quotation Sent"
         NEGOTIATION = "negotiation", "Negotiation"
         WON = "won", "Won"
         LOST = "lost", "Lost"
@@ -46,12 +48,16 @@ class Lead(models.Model):
     location = models.CharField(max_length=255)
 
     status = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=Status.choices,
         default=Status.LEAD,
     )
 
     notes = models.TextField(blank=True)
+    event_type = models.CharField(max_length=120, blank=True)
+    guest_count = models.PositiveIntegerField(null=True, blank=True)
+    budget_tier = models.CharField(max_length=80, blank=True)
+    requirements = models.TextField(blank=True)
 
     def __str__(self):
         return f"{self.customer} - {self.plan}"

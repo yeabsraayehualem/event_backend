@@ -58,15 +58,22 @@ class LeadDetailSerializer(serializers.ModelSerializer):
     can_assign_sales = serializers.SerializerMethodField()
     available_sales_people = serializers.SerializerMethodField()
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    event_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
         fields = [
             "id", "customer", "plan", "package", "date", "plan_date",
             "package_id", "location", "status", "status_label", "notes",
+            "event_type", "guest_count", "budget_tier", "requirements",
             "assigned_sales_person", "assigned_sales_person_id", "can_assign_sales",
             "available_sales_people",
+            "event_id",
         ]
+
+    def get_event_id(self, lead):
+        event_record = getattr(lead, "event_record", None)
+        return event_record.id if event_record else None
 
     def get_can_assign_sales(self, _lead):
         request = self.context.get("request")
