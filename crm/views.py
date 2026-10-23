@@ -9,7 +9,7 @@ from django.utils.dateparse import parse_date
 from django.shortcuts import get_object_or_404
 
 from crm.models import Customers, Lead
-from crm.serializers import LeadDetailSerializer, LeadsSerializer
+from crm.serializers import CRMLeadCreateSerializer, LeadDetailSerializer, LeadsSerializer
 from utils.formatter import Formatter
 from utils.permissions import IsLeadAssigneeOrSuper, IsSalesOrSuper
 from utils.views import SalesView
@@ -166,6 +166,13 @@ class CRMLeads(ListAPIView):
         if self.request.user.role != User.Role.SUPER:
             leads = leads.filter(assigned_sales_person=self.request.user)
         return leads.order_by("-date", "-id")
+
+    def post(self, request, *args, **kwargs):
+        serializer = CRMLeadCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        lead = serializer.save()
+        data = LeadDetailSerializer(lead, context={"request": request}).data
+        return Response(Formatter.success(data=data, message="Lead created."), status=201)
 
 
 class CRMLeadDetail(RetrieveUpdateAPIView):

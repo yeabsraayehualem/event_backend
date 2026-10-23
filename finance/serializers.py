@@ -5,9 +5,19 @@ from event.models import Content, Event
 from finance.models import CustomerInvoice, InvoiceLines, InvoiceLineTax, TaxRate
 
 
+class InvoiceListSerializer(serializers.ModelSerializer):
+    customer = serializers.CharField(source="customer.name", read_only=True)
+    plan = serializers.CharField(source="plan.name", read_only=True)
+    package = serializers.CharField(source="package.name", read_only=True, allow_null=True)
+    class Meta:
+        model = CustomerInvoice
+        fields = ["id", "reference", "sequence", "event", "date", "due_date", "total", "status", "customer", "plan", "package"]
+        read_only_fields = ["id", "reference", "sequence", "event", "date", "total", "customer", "plan", "package"]
+
 class InvoiceLineSerializer(serializers.ModelSerializer):
     inclusive_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
     content_id = serializers.PrimaryKeyRelatedField(source="content", queryset=Content.objects.all(), write_only=True)
+    selected_content_id = serializers.IntegerField(source="content_id", read_only=True)
     content_name = serializers.CharField(source="content.name", read_only=True)
     tax_profile_id = serializers.PrimaryKeyRelatedField(
         source="tax_profile", queryset=TaxRate.objects.filter(active=True), required=False, allow_null=True, write_only=True
@@ -16,13 +26,14 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
     tax_profile_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=TaxRate.objects.filter(active=True), required=False, write_only=True
     )
+    selected_tax_profile_ids = serializers.SerializerMethodField()
     tax_components = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoiceLines
         fields = [
-            "id", "content_id", "content_name", "tax_profile_id", "tax_profile_name",
-            "tax_profile_ids", "tax_components",
+            "id", "content_id", "selected_content_id", "content_name", "tax_profile_id", "tax_profile_name",
+            "tax_profile_ids", "selected_tax_profile_ids", "tax_components",
             "inclusive_price", "tax_rate", "price", "tax", "total",
         ]
         read_only_fields = ["id", "tax_rate", "price", "tax", "total"]
@@ -32,6 +43,12 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
             {"name": component.name, "kind": component.kind, "rate": str(component.rate), "amount": str(component.amount)}
             for component in line.tax_components.all()
         ]
+
+    def get_selected_tax_profile_ids(self, line):
+        profile_ids = [component.profile_id for component in line.tax_components.all() if component.profile_id]
+        if profile_ids:
+            return profile_ids
+        return [line.tax_profile_id] if line.tax_profile_id else []
 
     def validate(self, attrs):
         profiles = attrs.get("tax_profile_ids", [])
@@ -53,7 +70,7 @@ class CustomerInvoiceSerializer(serializers.ModelSerializer):
         model = CustomerInvoice
         fields = [
             "id", "reference", "sequence", "event", "event_id", "customer_name", "plan_name",
-            "package_name", "milestone_name", "date", "due_date", "total", "lines", "tax_breakdown",
+            "package_name", "milestone_name", "date", "due_date", "total", "status", "lines", "tax_breakdown",
         ]
         read_only_fields = ["id", "reference", "sequence", "event", "customer_name", "plan_name", "package_name", "date", "total", "tax_breakdown"]
 

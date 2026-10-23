@@ -32,6 +32,10 @@ class TaxRate(models.Model):
 
 
 class CustomerInvoice(models.Model):
+    class Status(models.TextChoices):
+        UNPAID = "unpaid", "Unpaid"
+        PAID = "paid", "Paid"
+
     date = models.DateField(auto_now_add=True)
 
     reference = models.CharField(max_length=20, unique=True, blank=True)
@@ -47,6 +51,7 @@ class CustomerInvoice(models.Model):
     package = models.ForeignKey(Package, on_delete=models.PROTECT, related_name="invoices", null=True, blank=True)
 
     total = models.DecimalField( max_digits=12,decimal_places=2,  default=0,)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.UNPAID)
     
     def recalculate_total(self):
         result = self.lines.aggregate(
