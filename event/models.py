@@ -1,5 +1,7 @@
 from django.db import models
+from datetime import date
 
+from accounts.models import User
 
 class Plan(models.Model):
     name = models.CharField(max_length=255)
@@ -68,3 +70,35 @@ class Event(models.Model):
 
     def __str__(self):
         return self.name
+
+
+
+
+class Project(models.Model):
+
+
+    name=models.CharField(max_length=200,null=False,blank=False)
+    start_date = models.DateField(default=date.today())
+    end_date = models.DateField()
+    event = models.ForeignKey(Event,on_delete=models.DO_NOTHING)
+    lead = models.ForeignKey(User,on_delete=models.DO_NOTHING)
+    status = models.CharField([('draft','Draft'),('inprogress',"In Progress"),('done','Done')],default="draft")
+
+    @property 
+    def tasks(self):
+
+        return Task.objects.filter(project=self).count
+
+
+class Task(models.Model):
+
+    project = models.ForeignKey(Project,on_delete=models.CASCADE)
+    name = models.CharField(max_length=255,null=False,blank=False)
+    assignees = models.ManyToManyField(User)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(choices=[("na","Not Assigned"),("assigned","Assigned"),("ongoing","On Going"),("complete","Complete"),("blocked","Blocked")],default="na")
+
+
+
+

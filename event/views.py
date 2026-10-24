@@ -2,8 +2,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from event.models import Plan
+from event.models import Plan, Project
+from event.serializers import ProjectsSerializer
 from utils.formatter import Formatter
+from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
 
 
 class PublicPlans(APIView):
@@ -38,3 +40,10 @@ class PublicPlans(APIView):
                 }
             )
         return Response(Formatter.success(data=data))
+
+
+class ProjectsList(ListCreateAPIView):
+
+    queryset = Project.objects.all()
+    serializer_class = ProjectsSerializer
+ 
