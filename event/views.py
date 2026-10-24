@@ -3,9 +3,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from event.models import Plan, Project
-from event.serializers import ProjectsSerializer
+from event.serializers import ProjectDetailSerializer, ProjectListSerializer
 from utils.formatter import Formatter
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
+from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, RetrieveUpdateAPIView
 
 
 class PublicPlans(APIView):
@@ -45,5 +45,10 @@ class PublicPlans(APIView):
 class ProjectsList(ListCreateAPIView):
 
     queryset = Project.objects.all()
-    serializer_class = ProjectsSerializer
- 
+    serializer_class = ProjectListSerializer
+
+
+
+class ProjectDetail(RetrieveAPIView):
+    queryset = Project.objects.select_related("event", "lead").prefetch_related("tasks__assignees")
+    serializer_class = ProjectDetailSerializer
