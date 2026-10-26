@@ -12,6 +12,8 @@ User = get_user_model()
 class NewSerializer:
     def printer(self):
         print("nothing")
+
+        print("another one")
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model= Customers
