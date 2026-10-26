@@ -16,6 +16,8 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 
 
+
+
 class PlanSerializer(serializers.ModelSerializer):
     class Meta:
         model= Plan

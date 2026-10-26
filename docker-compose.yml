@@ -1,0 +1,119 @@
+# ====================================================================
+# Docker Compose — Django (Gunicorn) + PostgreSQL + Celery + Redis
+#
+# Services:
+#   web     -> Django + Gunicorn on port 8001
+#   redis   -> Redis (Celery broker / cache / sessions)
+#   db      -> PostgreSQL (Django default database)
+#   celery  -> Celery worker (tasks + cron beat)
+#
+# Usage:
+#   docker compose up --build        # build & start everything
+#   docker compose up --build -d     # background
+#   docker compose logs -f web       # watch the web server
+#   docker compose exec web python3 manage.py createsuperuser
+#   docker compose exec web python3 manage.py shell
+# ====================================================================
+version: '3.9'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: event-org-web
+    container_name: event-org-web
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - DJANGO_SETTINGS_MODULE=event_org.settings
+      - DEBUG=1
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only-change-me}
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/event_org
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - DJANGO_ALLOW_ASYNC_UNSAFE=1
+      - MEDIA_ROOT=/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+      - media_data:/app/media
+    command: >
+      sh -c "python3 manage.py migrate --noinput &&
+             python3 manage.py collectstatic --noinput --clear &&
+             gunicorn event_org.wsgi:application "
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    container_name: event-org-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+
+  db:
+    image: postgres:16-alpine
+    container_name: event-org-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=event_org
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d event_org"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: event-org-celery
+    container_name: event-org-celery
+    restart: unless-stopped
+    environment:
+      - DJANGO_SETTINGS_MODULE=event_org.settings
+      - DEBUG=1
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only-change-me}
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/event_org
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CELERY_BEAT_SCHEDULER=django_celery_beat.schedulers:DatabaseScheduler
+      - DJANGO_ALLOW_ASYNC_UNSAFE=1
+    depends_on:
+      web:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+    command: >
+      sh -c "python3 manage.py migrate --noinput &&
+             celery -A event_org worker -l info -Q celery,default,celery-beat --concurrency=2"
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:

@@ -49,7 +49,7 @@ class IsStaff(BasePermission):
         return super().has_permission(request, view)
 
 class IsPM(BasePermission):
-    message="Access Denied. Role `Project Manamagement` is required"
+    message = "Access denied. Project Management access is required."
 
     def has_permission(self, request, view):
-        return super().has_permission(request, view)
+        return request.user.is_authenticated and request.user.role in {"pm", "super"}

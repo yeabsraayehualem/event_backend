@@ -82,7 +82,11 @@ class Project(models.Model):
     end_date = models.DateField()
     event = models.ForeignKey(Event,on_delete=models.DO_NOTHING)
     lead = models.ForeignKey(User,on_delete=models.DO_NOTHING)
-    status = models.CharField([('draft','Draft'),('inprogress',"In Progress"),('done','Done')],default="draft")
+    status = models.CharField(
+        max_length=20,
+        choices=[('draft', 'Draft'), ('inprogress', 'In Progress'), ('done', 'Done')],
+        default='draft',
+    )
 
     @property 
     def tasks(self):
@@ -97,7 +101,11 @@ class Task(models.Model):
     assignees = models.ManyToManyField(User)
     start_date = models.DateField()
     end_date = models.DateField()
-    status = models.CharField(choices=[("na","Not Assigned"),("assigned","Assigned"),("ongoing","On Going"),("complete","Complete"),("blocked","Blocked")],default="na")
+    status = models.CharField(
+        max_length=20,
+        choices=[("na", "Not Assigned"), ("assigned", "Assigned"), ("ongoing", "On Going"), ("complete", "Complete"), ("blocked", "Blocked")],
+        default="na",
+    )
 
 
 

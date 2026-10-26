@@ -12,10 +12,18 @@ class UserSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     assignees = UserSerializer(many=True, read_only=True)
+    assignee_ids = serializers.PrimaryKeyRelatedField(
+        source="assignees",
+        queryset=User.objects.filter(is_active=True),
+        many=True,
+        write_only=True,
+        required=False,
+    )
 
     class Meta:
         model = Task
-        fields = ["id", "name", "assignees", "start_date", "end_date", "status"]
+        fields = ["id", "name", "assignees", "assignee_ids", "start_date", "end_date", "status"]
+        read_only_fields = ["id"]
 
 
 class ProjectListSerializer(serializers.ModelSerializer):
@@ -33,3 +41,10 @@ class ProjectDetailSerializer(ProjectListSerializer):
     tasks = TaskSerializer(source="task_set", many=True, read_only=True)
     class Meta(ProjectListSerializer.Meta):
         fields = ProjectListSerializer.Meta.fields + ["tasks"]
+
+
+class ProjectStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ["id", "status"]
+        read_only_fields = ["id"]
