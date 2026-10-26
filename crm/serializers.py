@@ -8,6 +8,10 @@ from website.serializers import PackageSerializer
 
 User = get_user_model()
 
+
+class NewSerializer:
+    def printer(self):
+        print("nothing")
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model= Customers
