@@ -66,6 +66,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+     "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -77,13 +78,14 @@ MIDDLEWARE = [
 ]
 
 # The Vite development server runs on a different origin from Django.
-CORS_ALLOWED_ORIGINS = [
-  "*" 
-]
-CSRF_TRUSTED_ORIGINS = [
-        "*"
-]
+
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
+# CSRF_TRUSTED_ORIGINS = [
+#         "http://localhost:5173",
+#         "http://127.0.0.1:5173"
+# ]
+# CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'event_org.urls'
 
