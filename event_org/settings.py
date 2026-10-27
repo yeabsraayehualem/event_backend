@@ -79,8 +79,8 @@ MIDDLEWARE = [
 
 # The Vite development server runs on a different origin from Django.
 
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = ["https://event-front-eight.vercel.app"]
+CSRF_TRUSTED_ORIGINS = ["https://event-front-eight.vercel.app"]
 # CSRF_TRUSTED_ORIGINS = [
 #         "http://localhost:5173",
 #         "http://127.0.0.1:5173"
