@@ -40,6 +40,7 @@ ALLOWED_HOSTS = ["*"]
 # Application definition
 
 INSTALLED_APPS = [
+    "unfold",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -66,9 +67,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-     "corsheaders.middleware.CorsMiddleware",
-    'django.middleware.security.SecurityMiddleware',
+    # CorsMiddleware must come before CommonMiddleware so it can answer preflight requests.
     'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -79,13 +80,12 @@ MIDDLEWARE = [
 
 # The Vite development server runs on a different origin from Django.
 
-CORS_ALLOWED_ORIGINS = ["https://event-front-eight.vercel.app"]
-CSRF_TRUSTED_ORIGINS = ["https://event-front-eight.vercel.app"]
-# CSRF_TRUSTED_ORIGINS = [
-#         "http://localhost:5173",
-#         "http://127.0.0.1:5173"
-# ]
-# CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = ["https://event-front-eight.vercel.app", "http://localhost:5173","http://127.0.0.1:5173"]
+CSRF_TRUSTED_ORIGINS = ["https://event-front-eight.vercel.app", "http://localhost:5173","http://127.0.0.1:5173"]
+
+# The frontend sends the Django session cookie (fetch with credentials: 'include'),
+# so the browser requires Access-Control-Allow-Credentials: true on every response.
+CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'event_org.urls'
 

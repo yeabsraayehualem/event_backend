@@ -40,3 +40,4 @@ pytest-cov
 ruff
 django-debug-toolbar
 ipython
+django-unfold
