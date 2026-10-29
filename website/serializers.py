@@ -1,6 +1,3 @@
-from decimal import MAX_EMAX
-from pickletools import read_long1
-
 from rest_framework import serializers
 
 from event.models import Content, EventType, Package, Plan
@@ -17,7 +14,7 @@ class PackageSerializer(serializers.ModelSerializer):
     contents = ContentSerializer(many=True,read_only=True)
     class Meta:
         model = Package
-        fields = ["id", "name","contents"] 
+        fields = ["id", "name", "description", "price", "contents"]
 
 
 class EventTypeSerializer(serializers.ModelSerializer):
@@ -27,12 +24,24 @@ class EventTypeSerializer(serializers.ModelSerializer):
 
 
 class GetPlans(serializers.ModelSerializer):
-    packages = PackageSerializer(many=True, read_only=True)
+    packages = serializers.SerializerMethodField()
     event_types = EventTypeSerializer(many=True, read_only=True)
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = Plan
-        fields = ["id", "name", "packages", "event_types"]
+        fields = ["id", "name", "description", "image", "packages", "event_types"]
+
+    def get_image(self, plan):
+        if not plan.image:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(plan.image.url) if request else plan.image.url
+
+    def get_packages(self, plan):
+        # Cheapest first, so the website can say "from ETB …".
+        packages = sorted(plan.packages.all(), key=lambda package: (package.price <= 0, package.price, package.id))
+        return PackageSerializer(packages, many=True, context=self.context).data
 
 
 
