@@ -3,7 +3,7 @@ from pickletools import read_long1
 
 from rest_framework import serializers
 
-from event.models import Package, Plan,Content
+from event.models import Content, EventType, Package, Plan
 from .models import ShowcaseEntry
 
 
@@ -20,12 +20,19 @@ class PackageSerializer(serializers.ModelSerializer):
         fields = ["id", "name","contents"] 
 
 
+class EventTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EventType
+        fields = ["id", "name"]
+
+
 class GetPlans(serializers.ModelSerializer):
     packages = PackageSerializer(many=True, read_only=True)
+    event_types = EventTypeSerializer(many=True, read_only=True)
 
     class Meta:
         model = Plan
-        fields = ["id", "name", "packages"]
+        fields = ["id", "name", "packages", "event_types"]
 
 
 
@@ -40,7 +47,9 @@ class PublicLeadSerializer(serializers.Serializer):
     plan_date = serializers.DateField()
     location = serializers.CharField(max_length=255)
     notes = serializers.CharField(required=False, allow_blank=True)
-    event_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    event_type = serializers.PrimaryKeyRelatedField(
+        queryset=EventType.objects.all(), required=False, allow_null=True,
+    )
     guest_count = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     budget_tier = serializers.CharField(max_length=80, required=False, allow_blank=True)
     requirements = serializers.CharField(required=False, allow_blank=True)
@@ -49,6 +58,9 @@ class PublicLeadSerializer(serializers.Serializer):
         package = attrs.get("package")
         if package and package.plan_id != attrs["plan"].id:
             raise serializers.ValidationError({"package": "Choose a package from the selected plan."})
+        event_type = attrs.get("event_type")
+        if event_type and event_type.plan_id != attrs["plan"].id:
+            raise serializers.ValidationError({"event_type": "Choose an occasion from the selected plan."})
         return attrs
 
 

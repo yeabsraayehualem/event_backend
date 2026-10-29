@@ -8,7 +8,7 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from crm.automation import split_amount
 from crm.models import Customers, Lead
-from event.models import Content, Event, Package, Plan, Project
+from event.models import Content, Event, EventType, Package, Plan, Project
 from finance.models import CustomerInvoice
 
 
@@ -19,9 +19,10 @@ class WonLeadAutomationTests(APITestCase):
         plan = Plan.objects.create(name="Wedding", image="plans/x.jpg", description="")
         self.package = Package.objects.create(plan=plan, name="Gold", price=Decimal("600000.00"))
         self.package.contents.set([Content.objects.create(name="Catering"), Content.objects.create(name="Decor")])
+        wedding = EventType.objects.create(plan=plan, name="Wedding")
         self.lead = Lead.objects.create(
             customer=Customers.objects.create(name="Selam", phone="0911"), plan=plan, package=self.package,
-            plan_date=date(2027, 3, 1), location="Addis", event_type="Wedding",
+            plan_date=date(2027, 3, 1), location="Addis", event_type=wedding,
             status=Lead.Status.NEGOTIATION, assigned_sales_person=self.sales,
         )
 
@@ -88,3 +89,39 @@ class WonLeadAutomationTests(APITestCase):
 
     def test_split_amount_keeps_every_cent(self):
         self.assertEqual(split_amount(Decimal("10.00"), 3), [Decimal("3.33"), Decimal("3.33"), Decimal("3.34")])
+
+
+class DashboardTests(APITestCase):
+    def setUp(self):
+        self.sales = User.objects.create_user(username="sales", phone="0900000002", password="pass", role=User.Role.SALES)
+        self.other = User.objects.create_user(username="sales2", phone="0900000003", password="pass", role=User.Role.SALES)
+        plan = Plan.objects.create(name="Wedding", image="plans/x.jpg", description="")
+        package = Package.objects.create(plan=plan, name="Gold", price=Decimal("1000.00"))
+        package.contents.set([Content.objects.create(name="Catering")])
+        self.event_date = timezone.localdate() + timedelta(days=20)
+        for owner in (self.sales, self.other):
+            lead = Lead.objects.create(
+                customer=Customers.objects.create(name=f"C{owner.id}", phone=f"09{owner.id}"), plan=plan, package=package,
+                plan_date=self.event_date, location="Addis", status=Lead.Status.NEGOTIATION, assigned_sales_person=owner,
+            )
+            self.client.force_authenticate(owner)
+            self.client.patch(f"/api/v1/crm/sales/leads/{lead.id}/", {"status": "won"}, format="json")
+        CustomerInvoice.objects.filter(event__lead__assigned_sales_person=self.sales).update(
+            due_date=timezone.localdate() - timedelta(days=1),
+        )
+
+    def test_dashboard_is_scoped_to_the_sales_person(self):
+        self.client.force_authenticate(self.sales)
+        data = self.client.get("/api/v1/crm/sales/dashboard/").json()["data"]
+
+        self.assertEqual(len(data["monthly_inquiries"]), 6)
+        this_month = data["monthly_inquiries"][-1]
+        self.assertEqual((this_month["inquiries"], this_month["won"]), (1, 1))
+
+        receivables = data["receivables"]
+        self.assertEqual((receivables["outstanding_count"], receivables["outstanding_total"]), (1, "300.00"))
+        self.assertEqual((receivables["overdue_count"], receivables["overdue_total"]), (1, "300.00"))
+
+        [event] = data["upcoming_events"]
+        self.assertEqual((event["days_away"], event["unpaid_count"], event["tasks_total"]), (20, 1, 0))
+        self.assertIsNotNone(event["project_id"])

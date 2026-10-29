@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from crm.models import Customers, Lead
-from event.models import Package, Plan
+from event.models import EventType, Package, Plan
 from website.serializers import PackageSerializer
 
 User = get_user_model()
@@ -31,15 +31,24 @@ class PlanSerializer(serializers.ModelSerializer):
         fields = ["id","name"]
 
 
+def validate_event_type_for_plan(event_type, plan):
+    if event_type is not None and event_type.plan_id != plan.id:
+        raise serializers.ValidationError({"event_type_id": "Choose an event type that belongs to the selected plan."})
+
+
 class LeadPlanDetailSerializer(serializers.ModelSerializer):
     packages = serializers.SerializerMethodField()
+    event_types = serializers.SerializerMethodField()
 
     class Meta:
         model = Plan
-        fields = ["id", "name", "packages"]
+        fields = ["id", "name", "packages", "event_types"]
 
     def get_packages(self, plan):
         return [{"id": package.id, "name": package.name} for package in plan.packages.all()]
+
+    def get_event_types(self, plan):
+        return [{"id": event_type.id, "name": event_type.name} for event_type in plan.event_types.all()]
 
 class LeadsSerializer(serializers.ModelSerializer):
     customer = CustomerSerializer(many=False)
@@ -68,6 +77,10 @@ class LeadDetailSerializer(serializers.ModelSerializer):
     can_assign_sales = serializers.SerializerMethodField()
     available_sales_people = serializers.SerializerMethodField()
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    event_type = serializers.CharField(source="event_type.name", read_only=True, allow_null=True)
+    event_type_id = serializers.PrimaryKeyRelatedField(
+        source="event_type", queryset=EventType.objects.all(), required=False, allow_null=True,
+    )
     event_id = serializers.SerializerMethodField()
     invoice_ids = serializers.SerializerMethodField()
     project_ids = serializers.SerializerMethodField()
@@ -77,7 +90,7 @@ class LeadDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "customer", "plan", "package", "date", "plan_date",
             "package_id", "location", "status", "status_label", "notes",
-            "event_type", "guest_count", "budget_tier", "requirements",
+            "event_type", "event_type_id", "guest_count", "budget_tier", "requirements",
             "assigned_sales_person", "assigned_sales_person_id", "can_assign_sales",
             "available_sales_people",
             "event_id", "invoice_ids", "project_ids",
@@ -122,6 +135,8 @@ class LeadDetailSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "package_id": "Choose a package that belongs to this lead's plan."
             })
+        if "event_type" in attrs:
+            validate_event_type_for_plan(attrs["event_type"], self.instance.plan)
         return attrs
 
 
@@ -137,7 +152,9 @@ class CRMLeadCreateSerializer(serializers.Serializer):
     plan_date = serializers.DateField()
     location = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
     status = serializers.ChoiceField(choices=Lead.Status.choices, required=False, default=Lead.Status.LEAD)
-    event_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    event_type_id = serializers.PrimaryKeyRelatedField(
+        source="event_type", queryset=EventType.objects.all(), required=False, allow_null=True,
+    )
     guest_count = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     budget_tier = serializers.CharField(max_length=80, required=False, allow_blank=True)
     requirements = serializers.CharField(required=False, allow_blank=True)
@@ -153,6 +170,7 @@ class CRMLeadCreateSerializer(serializers.Serializer):
         package = attrs.get("package")
         if package and package.plan_id != attrs["plan"].id:
             raise serializers.ValidationError({"package_id": "Choose a package from the selected plan."})
+        validate_event_type_for_plan(attrs.get("event_type"), attrs["plan"])
         request = self.context.get("request")
         if attrs.get("assigned_sales_person") and (not request or request.user.role != User.Role.SUPER):
             raise serializers.ValidationError({"assigned_sales_person_id": "Only a super user can assign another sales person."})

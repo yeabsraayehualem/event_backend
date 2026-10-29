@@ -1,6 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, Q
+from datetime import timedelta
+
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import TruncMonth
+from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -15,16 +19,17 @@ from utils.permissions import IsLeadAssigneeOrSuper, IsSalesOrSuper
 from utils.views import SalesView
 from utils.views import SuperView
 from finance.models import CustomerInvoice
-from event.models import Event, Plan
+from event.models import Event, Plan, Project, Task
 from chatter.tracking import log_changes, post_message, snapshot
 from crm.automation import handle_won_lead
 
 
 User = get_user_model()
-LEAD_TRACKED_FIELDS = ["status", "plan_date", "location", "package", "assigned_sales_person", "notes"]
+LEAD_TRACKED_FIELDS = ["status", "event_type", "plan_date", "location", "package", "assigned_sales_person", "notes"]
 LEAD_FIELD_LABELS = {
     "plan_date": "Event date",
     "package": "Package",
+    "event_type": "Event type",
     "assigned_sales_person": "Sales person",
     "location": "Venue or location",
 }
@@ -135,7 +140,95 @@ class SalesDashboard(SalesView):
             "status_breakdown": status_breakdown,
             "recent_leads": recent_leads,
             "sales_performance": sales_performance,
+            "monthly_inquiries": self._monthly_inquiries(leads, start_date, end_date),
+            "receivables": self._receivables(None if is_super else request.user),
+            "upcoming_events": self._upcoming_events(None if is_super else request.user),
         }))
+
+    @staticmethod
+    def _month_starts(first, last):
+        months = []
+        current = first.replace(day=1)
+        while current <= last:
+            months.append(current)
+            current = (current + timedelta(days=32)).replace(day=1)
+        return months
+
+    @classmethod
+    def _monthly_inquiries(cls, leads, start_date, end_date):
+        """New inquiries and wins per month; the last six months unless a range is chosen."""
+        today = timezone.localdate()
+        last = end_date or today
+        first = start_date or (last.replace(day=1) - timedelta(days=150)).replace(day=1)
+        counts = {
+            row["month"]: row
+            for row in leads.filter(date__gte=first.replace(day=1), date__lte=last)
+            .annotate(month=TruncMonth("date"))
+            .values("month")
+            .annotate(inquiries=Count("id"), won=Count("id", filter=Q(status=Lead.Status.WON)))
+        }
+        months = cls._month_starts(first, last)[-24:]
+        return [
+            {
+                "month": month.isoformat(),
+                "inquiries": counts.get(month, {}).get("inquiries", 0),
+                "won": counts.get(month, {}).get("won", 0),
+            }
+            for month in months
+        ]
+
+    @staticmethod
+    def _receivables(sales_user=None):
+        """Unpaid invoices right now (not affected by the date filter)."""
+        unpaid = CustomerInvoice.objects.filter(status=CustomerInvoice.Status.UNPAID)
+        if sales_user:
+            unpaid = unpaid.filter(event__lead__assigned_sales_person=sales_user)
+        today = timezone.localdate()
+        overdue = unpaid.filter(due_date__lt=today)
+        due_soon = unpaid.filter(due_date__gte=today, due_date__lte=today + timedelta(days=7))
+        total = lambda qs: f"{qs.aggregate(value=Sum('total'))['value'] or 0:.2f}"
+        return {
+            "outstanding_total": total(unpaid),
+            "outstanding_count": unpaid.count(),
+            "overdue_total": total(overdue),
+            "overdue_count": overdue.count(),
+            "due_this_week_total": total(due_soon),
+            "due_this_week_count": due_soon.count(),
+        }
+
+    @staticmethod
+    def _upcoming_events(sales_user=None, limit=6):
+        events = (
+            Event.objects.filter(
+                status__in=[Event.Status.PLANNING, Event.Status.ACTIVE],
+                event_date__gte=timezone.localdate(),
+            )
+            .select_related("customer", "plan", "package")
+            .order_by("event_date", "id")
+        )
+        if sales_user:
+            events = events.filter(lead__assigned_sales_person=sales_user)
+        rows = []
+        for event in events[:limit]:
+            project = Project.objects.filter(event=event).order_by("id").first()
+            tasks = Task.objects.filter(project=project) if project else Task.objects.none()
+            task_total = tasks.count()
+            task_done = tasks.filter(status="complete").count()
+            invoices = CustomerInvoice.objects.filter(event=event)
+            rows.append({
+                "id": event.id,
+                "name": event.name,
+                "customer": event.customer.name,
+                "event_date": event.event_date.isoformat(),
+                "days_away": (event.event_date - timezone.localdate()).days,
+                "location": event.location,
+                "project_id": project.id if project else None,
+                "tasks_total": task_total,
+                "tasks_done": task_done,
+                "invoice_count": invoices.count(),
+                "unpaid_count": invoices.filter(status=CustomerInvoice.Status.UNPAID).count(),
+            })
+        return rows
 
     @staticmethod
     def _active_event_count(start_date, end_date, sales_user=None):
@@ -165,8 +258,9 @@ class LeadFormOptions(APIView):
                 "id": plan.id,
                 "name": plan.name,
                 "packages": [{"id": package.id, "name": package.name} for package in plan.packages.all()],
+                "event_types": [{"id": item.id, "name": item.name} for item in plan.event_types.all()],
             }
-            for plan in Plan.objects.prefetch_related("packages").order_by("name")
+            for plan in Plan.objects.prefetch_related("packages", "event_types").order_by("name")
         ]
         sales_people = [
             {"id": person.id, "name": person.get_full_name() or person.phone}
@@ -219,8 +313,8 @@ class CRMLeadDetail(RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return Lead.objects.select_related(
-            "customer", "plan", "package", "assigned_sales_person", "event_record"
-        ).prefetch_related("plan__packages", "package__contents")
+            "customer", "plan", "package", "assigned_sales_person", "event_record", "event_type"
+        ).prefetch_related("plan__packages", "plan__event_types", "package__contents")
 
     @transaction.atomic
     def perform_update(self, serializer):

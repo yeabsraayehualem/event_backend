@@ -9,13 +9,14 @@ from chatter.models import Message
 from chatter.serializers import MessageSerializer, NoteSerializer
 from chatter.tracking import post_message
 from crm.models import Lead
-from event.models import Event, Project
+from event.models import Event, Package, Plan, Project
 from finance.models import CustomerInvoice
 from utils.permissions import (
     IsLeadAssigneeOrSuper,
     IsPM,
     IsSalesOrFinanceOrSuper,
     IsSalesOrSuper,
+    CatalogPermission,
 )
 
 # Which records expose a chatter, and who may read or write it.
@@ -25,6 +26,8 @@ CHATTER_MODELS = {
     "event": (Event, [IsSalesOrSuper]),
     "project": (Project, [IsPM]),
     "invoice": (CustomerInvoice, [IsSalesOrFinanceOrSuper]),
+    "plan": (Plan, [CatalogPermission]),
+    "package": (Package, [CatalogPermission]),
 }
 
 

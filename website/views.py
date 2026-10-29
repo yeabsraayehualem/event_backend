@@ -20,7 +20,7 @@ from chatter.tracking import post_message
 class PlanListView(ListAPIView):
     permission_classes = [AllowAny]
     serializer_class = GetPlans
-    queryset = Plan.objects.prefetch_related("packages__contents")
+    queryset = Plan.objects.prefetch_related("packages__contents", "event_types")
 
 
 class PublicShowcaseView(ListAPIView):
@@ -58,7 +58,7 @@ class PublicLeadCreate(APIView):
                 plan_date=values["plan_date"],
                 location=values["location"],
                 notes=values.get("notes", ""),
-                event_type=values.get("event_type", ""),
+                event_type=values.get("event_type"),
                 guest_count=values.get("guest_count"),
                 budget_tier=values.get("budget_tier", ""),
                 requirements=values.get("requirements", ""),

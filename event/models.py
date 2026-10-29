@@ -5,8 +5,23 @@ from accounts.models import User
 
 class Plan(models.Model):
     name = models.CharField(max_length=255)
-    image = models.ImageField(upload_to="plans/")
-    description = models.TextField()
+    image = models.ImageField(upload_to="plans/", blank=True)
+    description = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+class EventType(models.Model):
+    """An occasion a plan covers, e.g. the Wedding plan covers Teklil and civil weddings."""
+
+    plan = models.ForeignKey(Plan, on_delete=models.CASCADE, related_name="event_types")
+    name = models.CharField(max_length=120)
+    sequence = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sequence", "id"]
+        constraints = [models.UniqueConstraint(fields=["plan", "name"], name="unique_event_type_per_plan")]
 
     def __str__(self):
         return self.name
@@ -78,7 +93,7 @@ class Project(models.Model):
 
 
     name=models.CharField(max_length=200,null=False,blank=False)
-    start_date = models.DateField(default=date.today())
+    start_date = models.DateField(default=date.today)
     end_date = models.DateField()
     event = models.ForeignKey(Event,on_delete=models.DO_NOTHING)
     lead = models.ForeignKey(User,on_delete=models.DO_NOTHING)

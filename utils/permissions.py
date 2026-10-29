@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission 
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 class IsSuperUser(BasePermission):
@@ -60,3 +60,17 @@ class IsEventStaff(BasePermission):
 
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role in {"sales", "finance", "pm", "super"}
+
+
+class CatalogPermission(BasePermission):
+    """Staff may read plans, packages and services; only super users and admins may change them."""
+
+    message = "Only a super user or admin can change the catalog."
+    READ_ROLES = {"sales", "finance", "pm", "admin", "super"}
+    WRITE_ROLES = {"admin", "super"}
+
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        roles = self.READ_ROLES if request.method in SAFE_METHODS else self.WRITE_ROLES
+        return request.user.role in roles

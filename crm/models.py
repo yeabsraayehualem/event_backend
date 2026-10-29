@@ -1,6 +1,6 @@
 from django.db import models
 from accounts.models import User
-from event.models import Package, Plan
+from event.models import EventType, Package, Plan
 # Create your models here.
 
 class Customers(models.Model):
@@ -54,7 +54,9 @@ class Lead(models.Model):
     )
 
     notes = models.TextField(blank=True)
-    event_type = models.CharField(max_length=120, blank=True)
+    event_type = models.ForeignKey(
+        EventType, on_delete=models.PROTECT, null=True, blank=True, related_name="leads",
+    )
     guest_count = models.PositiveIntegerField(null=True, blank=True)
     budget_tier = models.CharField(max_length=80, blank=True)
     requirements = models.TextField(blank=True)
