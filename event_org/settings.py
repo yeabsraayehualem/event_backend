@@ -156,3 +156,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Won-lead automation: the deposit invoice raised when a lead is won.
+LEAD_WON_DEPOSIT_PERCENT = os.environ.get("LEAD_WON_DEPOSIT_PERCENT", "30")
+LEAD_WON_INVOICE_DUE_DAYS = int(os.environ.get("LEAD_WON_INVOICE_DUE_DAYS", "7"))

@@ -69,6 +69,8 @@ class LeadDetailSerializer(serializers.ModelSerializer):
     available_sales_people = serializers.SerializerMethodField()
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     event_id = serializers.SerializerMethodField()
+    invoice_ids = serializers.SerializerMethodField()
+    project_ids = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -78,12 +80,20 @@ class LeadDetailSerializer(serializers.ModelSerializer):
             "event_type", "guest_count", "budget_tier", "requirements",
             "assigned_sales_person", "assigned_sales_person_id", "can_assign_sales",
             "available_sales_people",
-            "event_id",
+            "event_id", "invoice_ids", "project_ids",
         ]
 
     def get_event_id(self, lead):
         event_record = getattr(lead, "event_record", None)
         return event_record.id if event_record else None
+
+    def get_invoice_ids(self, lead):
+        event_record = getattr(lead, "event_record", None)
+        return list(event_record.invoices.order_by("id").values_list("id", flat=True)) if event_record else []
+
+    def get_project_ids(self, lead):
+        event_record = getattr(lead, "event_record", None)
+        return list(event_record.project_set.order_by("id").values_list("id", flat=True)) if event_record else []
 
     def get_can_assign_sales(self, _lead):
         request = self.context.get("request")

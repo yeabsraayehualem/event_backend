@@ -17,6 +17,7 @@ from utils.views import SuperView
 from finance.models import CustomerInvoice
 from event.models import Event, Plan
 from chatter.tracking import log_changes, post_message, snapshot
+from crm.automation import handle_won_lead
 
 
 User = get_user_model()
@@ -200,8 +201,11 @@ class CRMLeads(ListAPIView):
     def post(self, request, *args, **kwargs):
         serializer = CRMLeadCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        lead = serializer.save()
-        post_message(lead, body="Lead created.", author=request.user)
+        with transaction.atomic():
+            lead = serializer.save()
+            post_message(lead, body="Lead created.", author=request.user)
+            if lead.status == Lead.Status.WON:
+                handle_won_lead(lead, request.user)
         data = LeadDetailSerializer(lead, context={"request": request}).data
         return Response(Formatter.success(data=data, message="Lead created."), status=201)
 
@@ -218,10 +222,14 @@ class CRMLeadDetail(RetrieveUpdateAPIView):
             "customer", "plan", "package", "assigned_sales_person", "event_record"
         ).prefetch_related("plan__packages", "package__contents")
 
+    @transaction.atomic
     def perform_update(self, serializer):
+        was_won = serializer.instance.status == Lead.Status.WON
         before = snapshot(serializer.instance, LEAD_TRACKED_FIELDS)
         lead = serializer.save()
         log_changes(lead, before, LEAD_TRACKED_FIELDS, self.request.user, labels=LEAD_FIELD_LABELS)
+        if lead.status == Lead.Status.WON and not was_won:
+            handle_won_lead(lead, self.request.user)
 
 
 class ConvertLeadToEvent(APIView):
@@ -234,32 +242,21 @@ class ConvertLeadToEvent(APIView):
         self.check_object_permissions(request, lead)
         if lead.status != Lead.Status.WON:
             raise ValidationError({"status": "Only a won lead can be converted to an event."})
-        event, created = Event.objects.get_or_create(
-            lead=lead,
-            defaults={
-                "customer": lead.customer,
-                "plan": lead.plan,
-                "package": lead.package,
-                "name": f"{lead.customer.name} — {lead.event_type or lead.plan.name}",
-                "event_type": lead.event_type,
-                "event_date": lead.plan_date,
-                "guest_count": lead.guest_count,
-                "location": lead.location,
-            },
-        )
-        if created:
-            post_message(lead, body=f"Event #{event.id} “{event.name}” created from this lead.", author=request.user)
-            post_message(event, body=f"Event created from lead #{lead.id}.", author=request.user)
+        # Fills in whatever the won-lead automation has not created yet (e.g. leads won before it existed).
+        result = handle_won_lead(lead, request.user)
+        event = result["event"]
         return Response(Formatter.success(
             data={
                 "id": event.id,
                 "name": event.name,
                 "event_date": event.event_date.isoformat(),
                 "status": event.status,
-                "created": created,
+                "created": result["event_created"],
+                "invoice_id": result["invoice"].id if result["invoice"] else None,
+                "project_id": result["project"].id if result["project"] else None,
             },
-            message="Event created from won lead." if created else "This lead already has an event.",
-        ), status=201 if created else 200)
+            message="Event created from won lead." if result["event_created"] else "This lead already has an event.",
+        ), status=201 if result["event_created"] else 200)
 
 
 class CustomerHistory(APIView):
