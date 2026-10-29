@@ -15,6 +15,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from .models import ShowcaseEntry
 from utils.formatter import Formatter
+from chatter.tracking import post_message
 
 class PlanListView(ListAPIView):
     permission_classes = [AllowAny]
@@ -62,6 +63,7 @@ class PublicLeadCreate(APIView):
                 budget_tier=values.get("budget_tier", ""),
                 requirements=values.get("requirements", ""),
             )
+            post_message(lead, body="Lead created from a website inquiry.")
         if values.get("email") or customer.email:
             send_mail(
                 subject="We received your celebration inquiry",

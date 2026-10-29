@@ -4,11 +4,16 @@ from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 
 from accounts.models import User
-from event.models import Plan, Project, Task
+from event.models import Event, Plan, Project, Task
 from event.serializers import ProjectDetailSerializer, ProjectListSerializer, ProjectStatusSerializer, TaskSerializer, UserSerializer
 from utils.formatter import Formatter
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
-from utils.permissions import IsPM
+from utils.permissions import IsEventStaff, IsPM
+from chatter.tracking import log_changes, post_message, snapshot
+
+PROJECT_TRACKED_FIELDS = ["status"]
+TASK_TRACKED_FIELDS = ["name", "status", "start_date", "end_date", "assignees"]
+TASK_FIELD_LABELS = {"name": "Task name", "assignees": "Assignees"}
 
 
 class PublicPlans(APIView):
@@ -45,11 +50,36 @@ class PublicPlans(APIView):
         return Response(Formatter.success(data=data))
 
 
+class EventOptions(APIView):
+    """Events to pick from when creating a project or an invoice."""
+
+    permission_classes = [IsEventStaff]
+
+    def get(self, request):
+        events = Event.objects.select_related("customer", "plan", "package").exclude(status=Event.Status.CANCELLED)
+        return Response([
+            {
+                "id": event.id,
+                "name": event.name,
+                "customer": event.customer.name,
+                "event_date": event.event_date.isoformat(),
+                "plan": event.plan.name,
+                "package": event.package.name if event.package_id else None,
+                "status": event.status,
+            }
+            for event in events.order_by("-event_date", "-id")
+        ])
+
+
 class ProjectsList(ListCreateAPIView):
 
     queryset = Project.objects.all()
     serializer_class = ProjectListSerializer
     permission_classes = [IsPM]
+
+    def perform_create(self, serializer):
+        project = serializer.save()
+        post_message(project, body="Project created.", author=self.request.user)
 
 
 
@@ -59,6 +89,11 @@ class ProjectDetail(RetrieveUpdateAPIView):
 
     def get_serializer_class(self):
         return ProjectDetailSerializer if self.request.method == "GET" else ProjectStatusSerializer
+
+    def perform_update(self, serializer):
+        before = snapshot(serializer.instance, PROJECT_TRACKED_FIELDS)
+        project = serializer.save()
+        log_changes(project, before, PROJECT_TRACKED_FIELDS, self.request.user)
 
 
 class ProjectTasks(ListCreateAPIView):
@@ -70,7 +105,8 @@ class ProjectTasks(ListCreateAPIView):
 
     def perform_create(self, serializer):
         project = get_object_or_404(Project, pk=self.kwargs["project_pk"])
-        serializer.save(project=project)
+        task = serializer.save(project=project)
+        post_message(project, body=f"Task “{task.name}” added.", author=self.request.user)
 
 
 class ProjectTaskDetail(RetrieveUpdateAPIView):
@@ -79,6 +115,16 @@ class ProjectTaskDetail(RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return Task.objects.filter(project_id=self.kwargs["project_pk"]).prefetch_related("assignees")
+
+    def perform_update(self, serializer):
+        task = serializer.instance
+        before = snapshot(task, TASK_TRACKED_FIELDS)
+        task = serializer.save()
+        # Tasks are edited inline on the project form, so their history lives on the project's chatter.
+        log_changes(
+            task, before, TASK_TRACKED_FIELDS, self.request.user,
+            body=f"Task “{task.name}” updated.", record=task.project, labels=TASK_FIELD_LABELS,
+        )
 
 
 class ProjectAssigneeOptions(APIView):

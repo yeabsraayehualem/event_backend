@@ -53,3 +53,10 @@ class IsPM(BasePermission):
 
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role in {"pm", "super"}
+
+
+class IsEventStaff(BasePermission):
+    message = "Access denied. Sales, finance, project management, or super user role is required."
+
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in {"sales", "finance", "pm", "super"}

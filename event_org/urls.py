@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/v1/crm/",include("crm.urls")),
     path("api/v1/event/", include("event.urls")),
     path("api/v1/finance/", include("finance.urls")),
+    path("api/v1/chatter/", include("chatter.urls")),
     path("api/v1/website/",include("website.urls"))
 ]
 

@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "event",
     "crm",
     "finance",
+    "chatter",
 
 
 

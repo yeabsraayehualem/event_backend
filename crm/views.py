@@ -15,10 +15,18 @@ from utils.permissions import IsLeadAssigneeOrSuper, IsSalesOrSuper
 from utils.views import SalesView
 from utils.views import SuperView
 from finance.models import CustomerInvoice
-from event.models import Event
+from event.models import Event, Plan
+from chatter.tracking import log_changes, post_message, snapshot
 
 
 User = get_user_model()
+LEAD_TRACKED_FIELDS = ["status", "plan_date", "location", "package", "assigned_sales_person", "notes"]
+LEAD_FIELD_LABELS = {
+    "plan_date": "Event date",
+    "package": "Package",
+    "assigned_sales_person": "Sales person",
+    "location": "Venue or location",
+}
 ACTIVE_STATUSES = [
     Lead.Status.LEAD,
     Lead.Status.CONTACTED,
@@ -144,6 +152,28 @@ class SalesDashboard(SalesView):
 
 
 
+class LeadFormOptions(APIView):
+    """Choices needed to create a lead by hand: plans with their packages, and sales people."""
+
+    permission_classes = [IsSalesOrSuper]
+
+    def get(self, request):
+        is_super = request.user.role == User.Role.SUPER
+        plans = [
+            {
+                "id": plan.id,
+                "name": plan.name,
+                "packages": [{"id": package.id, "name": package.name} for package in plan.packages.all()],
+            }
+            for plan in Plan.objects.prefetch_related("packages").order_by("name")
+        ]
+        sales_people = [
+            {"id": person.id, "name": person.get_full_name() or person.phone}
+            for person in User.objects.filter(role=User.Role.SALES).order_by("first_name", "last_name", "phone")
+        ] if is_super else []
+        return Response({"plans": plans, "sales_people": sales_people, "can_assign_sales": is_super})
+
+
 class CRMLeads(ListAPIView):
     """List leads for a status, scoped to the current sales user."""
 
@@ -171,6 +201,7 @@ class CRMLeads(ListAPIView):
         serializer = CRMLeadCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         lead = serializer.save()
+        post_message(lead, body="Lead created.", author=request.user)
         data = LeadDetailSerializer(lead, context={"request": request}).data
         return Response(Formatter.success(data=data, message="Lead created."), status=201)
 
@@ -186,6 +217,11 @@ class CRMLeadDetail(RetrieveUpdateAPIView):
         return Lead.objects.select_related(
             "customer", "plan", "package", "assigned_sales_person", "event_record"
         ).prefetch_related("plan__packages", "package__contents")
+
+    def perform_update(self, serializer):
+        before = snapshot(serializer.instance, LEAD_TRACKED_FIELDS)
+        lead = serializer.save()
+        log_changes(lead, before, LEAD_TRACKED_FIELDS, self.request.user, labels=LEAD_FIELD_LABELS)
 
 
 class ConvertLeadToEvent(APIView):
@@ -211,6 +247,9 @@ class ConvertLeadToEvent(APIView):
                 "location": lead.location,
             },
         )
+        if created:
+            post_message(lead, body=f"Event #{event.id} “{event.name}” created from this lead.", author=request.user)
+            post_message(event, body=f"Event created from lead #{lead.id}.", author=request.user)
         return Response(Formatter.success(
             data={
                 "id": event.id,
