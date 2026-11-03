@@ -60,6 +60,8 @@ INSTALLED_APPS = [
     "crm",
     "finance",
     "chatter",
+    "procurement",
+    "hr",
 
 
 

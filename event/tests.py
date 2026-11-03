@@ -13,10 +13,13 @@ class CatalogTests(APITestCase):
         self.super_user = User.objects.create_user(username="admin", phone="0900000001", password="pass", role=User.Role.SUPER)
         self.sales = User.objects.create_user(username="sales", phone="0900000002", password="pass", role=User.Role.SALES)
 
-    def test_sales_can_read_but_not_change_the_catalog(self):
-        self.client.force_authenticate(self.sales)
+    def test_finance_can_read_but_not_change_the_catalog_and_sales_cannot_open_it(self):
+        finance = User.objects.create_user(username="fin", phone="0900000004", password="pass", role=User.Role.FINANCE)
+        self.client.force_authenticate(finance)
         self.assertEqual(self.client.get("/api/v1/event/catalog/plans/").status_code, 200)
         self.assertEqual(self.client.post("/api/v1/event/catalog/plans/", {"name": "Wedding"}, format="json").status_code, 403)
+        self.client.force_authenticate(self.sales)
+        self.assertEqual(self.client.get("/api/v1/event/catalog/plans/").status_code, 403)
 
     def test_plan_event_types_are_created_renamed_and_protected(self):
         self.client.force_authenticate(self.super_user)

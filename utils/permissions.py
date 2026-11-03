@@ -1,76 +1,67 @@
-from rest_framework.permissions import SAFE_METHODS, BasePermission
+"""DRF permission classes. Every role list comes from utils/rbac.py, the single access table.
+
+The class names are kept so views read naturally; change who may do what in rbac.MODULES.
+"""
+
+from rest_framework.permissions import BasePermission
+
+from utils.rbac import action_permission, can, module_permission
+
+# Leads, the sales pipeline and customers.
+IsSalesOrSuper = module_permission("leads", message="Access denied. Your role doesn't include leads.")
+# Invoices.
+IsSalesOrFinanceOrSuper = module_permission("invoices", message="Access denied. Your role doesn't include invoices.")
+# Event pickers shared by projects, invoices and procurement.
+IsEventStaff = module_permission("events", message="Access denied. Your role doesn't include events.")
+# Projects and tasks.
+IsPM = module_permission("projects", message="Access denied. Project management access is required.")
+# Plans, packages and services: wide read, managers write.
+CatalogPermission = module_permission("catalog", message="Only a super user or admin can change the catalog.")
+# Vendors and purchase orders.
+ProcurementPermission = module_permission("purchase_orders", message="Access denied. Procurement access is required.")
+# Expenses.
+IsFinance = module_permission("expenses", message="Access denied. Finance access is required.")
+# Crew directory and event schedule.
+HRPermission = module_permission("crew", message="Access denied. HR or event management access is required.")
+# Paying a worked shift.
+CanPayCrew = action_permission("crew", "pay", message="Only finance, admins or super users can pay crew.")
+# Payroll runs.
+PayrollPermission = module_permission("payroll", message="Access denied. Payroll is limited to HR, finance, admins and super users.")
+# User accounts.
+IsUserAdmin = module_permission("users", message="Only admins and super users can manage user accounts.")
+# Merging customer records and other pipeline-wide actions.
+CanManageLeads = action_permission("leads", "manage", message="Only admins and super users can do this.")
 
 
 class IsSuperUser(BasePermission):
-    messge="Access Denied. super user role is required to access!"
+    message = "Access denied. Super user role is required."
 
-    def has_permission(self,request,view):
+    def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == "super"
 
 
-class IsSalesPerson(BasePermission):
-    message="Access Denied. Role `Sales` is required"
-
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == "sales"
-
-
-class IsSalesOrSuper(BasePermission):
-    message = "Access denied. Sales or super user role is required."
-
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in {"sales", "super"}
-
-
-class IsSalesOrFinanceOrSuper(BasePermission):
-    message = "Access denied. Sales, finance, or super user role is required."
-
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in {"sales", "finance", "super"}
-
-
 class IsLeadAssigneeOrSuper(BasePermission):
-    message = "Only a super user or the sales person assigned to this lead may access it."
+    message = "Only the sales person assigned to this lead, an admin or a super user may access it."
 
     def has_object_permission(self, request, view, obj):
-        return (
-            request.user.is_authenticated
-            and (
-                request.user.role == "super"
-                or obj.assigned_sales_person_id == request.user.pk
-            )
-        )
+        return can(request.user, "leads", "manage") or obj.assigned_sales_person_id == request.user.pk
 
 
-class IsStaff(BasePermission):
-    message="Access Denied. Role `Staff` is required"
-
-    def has_permission(self, request, view):
-        return super().has_permission(request, view)
-
-class IsPM(BasePermission):
-    message = "Access denied. Project Management access is required."
-
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in {"pm", "super"}
+def can_manage_leads(user):
+    return can(user, "leads", "manage")
 
 
-class IsEventStaff(BasePermission):
-    message = "Access denied. Sales, finance, project management, or super user role is required."
-
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in {"sales", "finance", "pm", "super"}
+def can_approve_purchases(user):
+    return can(user, "purchase_orders", "approve")
 
 
-class CatalogPermission(BasePermission):
-    """Staff may read plans, packages and services; only super users and admins may change them."""
+def can_set_event_budget(user):
+    return can(user, "purchase_orders", "budget")
 
-    message = "Only a super user or admin can change the catalog."
-    READ_ROLES = {"sales", "finance", "pm", "admin", "super"}
-    WRITE_ROLES = {"admin", "super"}
 
-    def has_permission(self, request, view):
-        if not request.user.is_authenticated:
-            return False
-        roles = self.READ_ROLES if request.method in SAFE_METHODS else self.WRITE_ROLES
-        return request.user.role in roles
+def can_approve_payouts(user):
+    return can(user, "crew", "pay")
+
+
+def can_approve_payroll(user):
+    return can(user, "payroll", "approve")

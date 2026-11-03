@@ -51,6 +51,9 @@ class WonLeadAutomationTests(APITestCase):
         summary = self.client.get(f"/api/v1/chatter/lead/{self.lead.id}/").json()[0]["body"]
         self.assertIn(invoice.reference, summary)
         self.assertIn("ETB 180,000.00", summary)
+        # The salesperson wins the lead; the invoice it creates belongs to finance.
+        self.assertEqual(self.client.get(f"/api/v1/chatter/invoice/{invoice.id}/").status_code, 403)
+        self.client.force_authenticate(self.super_user)
         invoice_note = self.client.get(f"/api/v1/chatter/invoice/{invoice.id}/").json()[0]["body"]
         self.assertIn("Deposit of 30% of the package price", invoice_note)
         self.assertIn("preparation", summary)
@@ -118,10 +121,16 @@ class DashboardTests(APITestCase):
         this_month = data["monthly_inquiries"][-1]
         self.assertEqual((this_month["inquiries"], this_month["won"]), (1, 1))
 
-        receivables = data["receivables"]
-        self.assertEqual((receivables["outstanding_count"], receivables["outstanding_total"]), (1, "300.00"))
-        self.assertEqual((receivables["overdue_count"], receivables["overdue_total"]), (1, "300.00"))
+        # Sales only see their pipeline: money and event operations belong to finance and project management.
+        self.assertEqual((data["receivables"], data["upcoming_events"], data["financials"]), (None, None, None))
 
-        [event] = data["upcoming_events"]
-        self.assertEqual((event["days_away"], event["unpaid_count"], event["tasks_total"]), (20, 1, 0))
+        boss = User.objects.create_user(username="boss", phone="0900000099", password="pass", role=User.Role.SUPER)
+        self.client.force_authenticate(boss)
+        data = self.client.get("/api/v1/crm/sales/dashboard/").json()["data"]
+        receivables = data["receivables"]
+        self.assertEqual((receivables["outstanding_count"], receivables["outstanding_total"]), (2, "600.00"))
+        self.assertEqual((receivables["overdue_count"], receivables["overdue_total"]), (1, "300.00"))
+        self.assertEqual(len(data["upcoming_events"]), 2)
+        event = next(item for item in data["upcoming_events"] if item["unpaid_count"])
+        self.assertEqual((event["days_away"], event["tasks_total"]), (20, 0))
         self.assertIsNotNone(event["project_id"])

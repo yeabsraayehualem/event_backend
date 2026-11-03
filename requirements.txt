@@ -41,3 +41,5 @@ ruff
 django-debug-toolbar
 ipython
 django-unfold
+# Internal packages
+./packages/django-record-chatter

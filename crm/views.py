@@ -15,10 +15,13 @@ from django.shortcuts import get_object_or_404
 from crm.models import Customers, Lead
 from crm.serializers import CRMLeadCreateSerializer, LeadDetailSerializer, LeadsSerializer
 from utils.formatter import Formatter
-from utils.permissions import IsLeadAssigneeOrSuper, IsSalesOrSuper
-from utils.views import SalesView
-from utils.views import SuperView
+from utils.permissions import CanManageLeads, IsLeadAssigneeOrSuper, IsSalesOrSuper, can_manage_leads
+from utils.rbac import can, module_permission
 from finance.models import CustomerInvoice
+from decimal import Decimal
+
+from finance.models import Expense
+from procurement.models import PurchaseOrder, money
 from event.models import Event, Plan, Project, Task
 from chatter.tracking import log_changes, post_message, snapshot
 from crm.automation import handle_won_lead
@@ -42,11 +45,19 @@ ACTIVE_STATUSES = [
 ]
 
 
-class SalesDashboard(SalesView):
-    """CRM summary scoped to all leads for super users and owned leads for sales."""
+class SalesDashboard(APIView):
+    """Home page figures. Each section is included only when the role can see that module:
+    leads (all of them for admins/super users, your own for sales), receivables, upcoming
+    events and company financials. Sections the role can't see come back as null.
+    """
+
+    permission_classes = [module_permission("dashboard")]
 
     def get(self, request, *args, **kwargs):
-        is_super = request.user.role == User.Role.SUPER
+        user = request.user
+        is_super = can_manage_leads(user)
+        show_leads, show_invoices = can(user, "leads"), can(user, "invoices")
+        show_events, show_financials = can(user, "events"), can(user, "financials")
         leads = Lead.objects.all() if is_super else Lead.objects.filter(assigned_sales_person=request.user)
         start_raw = request.query_params.get("start_date")
         end_raw = request.query_params.get("end_date")
@@ -134,16 +145,65 @@ class SalesDashboard(SalesView):
                 "conversion_rate": round((counts["wins"] / resolved) * 100, 1) if resolved else 0,
             })
 
+        # Sales people see their own pipeline; everyone else with access sees the whole company.
+        scoped_user = None if (is_super or not show_leads) else request.user
         return Response(Formatter.success(data={
-            "scope": "all" if is_super else "assigned_to_me",
-            "summary": summary,
-            "status_breakdown": status_breakdown,
-            "recent_leads": recent_leads,
-            "sales_performance": sales_performance,
-            "monthly_inquiries": self._monthly_inquiries(leads, start_date, end_date),
-            "receivables": self._receivables(None if is_super else request.user),
-            "upcoming_events": self._upcoming_events(None if is_super else request.user),
+            "scope": "all" if scoped_user is None else "assigned_to_me",
+            "summary": summary if show_leads else None,
+            "status_breakdown": status_breakdown if show_leads else None,
+            "recent_leads": recent_leads if show_leads else None,
+            "sales_performance": sales_performance if show_leads else None,
+            "monthly_inquiries": self._monthly_inquiries(leads, start_date, end_date) if show_leads else None,
+            "receivables": self._receivables(scoped_user) if show_invoices else None,
+            "upcoming_events": self._upcoming_events(scoped_user) if show_events else None,
+            "active_events": self._active_event_count(start_date, end_date, scoped_user) if show_events else None,
+            "financials": self._financials(start_date, end_date) if show_financials else None,
         }))
+
+    @staticmethod
+    def _financials(start_date, end_date):
+        """Income, expenses and net gain for the range, excluding VAT.
+
+        Income is what was invoiced (by invoice date), whether or not it is paid yet.
+        Expenses are recorded expenses (by expense date): event costs when linked to an
+        event, overhead otherwise. Approved orders not billed yet are shown, not counted.
+        """
+        invoices = CustomerInvoice.objects.all()
+        expenses = Expense.objects.all()
+        orders = PurchaseOrder.objects.filter(status__in=PurchaseOrder.COMMITTED_STATUSES)
+        if start_date:
+            invoices = invoices.filter(date__gte=start_date)
+            expenses = expenses.filter(date__gte=start_date)
+            orders = orders.filter(order_date__gte=start_date)
+        if end_date:
+            invoices = invoices.filter(date__lte=end_date)
+            expenses = expenses.filter(date__lte=end_date)
+            orders = orders.filter(order_date__lte=end_date)
+
+        total = lambda qs, field: money(qs.aggregate(value=Sum(field))["value"] or 0)
+        income = total(invoices, "lines__price")
+        collected = total(invoices.filter(status=CustomerInvoice.Status.PAID), "lines__price")
+        event_costs = total(expenses.filter(event__isnull=False), "amount")
+        overhead = total(expenses.filter(event__isnull=True), "amount")
+        expense = event_costs + overhead
+        # Untaxed share of each committed order that has no bill yet.
+        unbilled = Decimal("0.00")
+        for order in orders.annotate(billed=Sum("bills__total")):
+            if order.total > 0:
+                unbilled += money(order.subtotal * max(order.total - (order.billed or 0), 0) / order.total)
+        net = income - expense
+        return {
+            "income": str(income),
+            "collected": str(collected),
+            "invoice_count": invoices.count(),
+            "expense": str(expense),
+            "event_costs": str(event_costs),
+            "overhead": str(overhead),
+            "expense_count": expenses.count(),
+            "unbilled_commitments": str(unbilled),
+            "net": str(net),
+            "margin": round(float(net / income) * 100, 1) if income else None,
+        }
 
     @staticmethod
     def _month_starts(first, last):
@@ -252,7 +312,7 @@ class LeadFormOptions(APIView):
     permission_classes = [IsSalesOrSuper]
 
     def get(self, request):
-        is_super = request.user.role == User.Role.SUPER
+        is_super = can_manage_leads(request.user)
         plans = [
             {
                 "id": plan.id,
@@ -288,7 +348,7 @@ class CRMLeads(ListAPIView):
         leads = Lead.objects.select_related("customer", "plan", "package")
         if status_value != "all":
             leads = leads.filter(status=status_value)
-        if self.request.user.role != User.Role.SUPER:
+        if not can_manage_leads(self.request.user):
             leads = leads.filter(assigned_sales_person=self.request.user)
         return leads.order_by("-date", "-id")
 
@@ -359,7 +419,7 @@ class CustomerHistory(APIView):
     def get(self, request, customer_id):
         customer = get_object_or_404(Customers, pk=customer_id)
         leads = Lead.objects.filter(customer=customer)
-        if request.user.role != User.Role.SUPER:
+        if not can_manage_leads(request.user):
             leads = leads.filter(assigned_sales_person=request.user)
             if not leads.exists():
                 raise PermissionDenied("You can only view customers connected to your assigned leads.")
@@ -388,7 +448,7 @@ class CustomerHistory(APIView):
                 Event.objects.filter(customer=customer)
                 .filter(lead__assigned_sales_person=request.user)
                 .order_by("-created_at", "-id")
-                if request.user.role != User.Role.SUPER
+                if not can_manage_leads(request.user)
                 else Event.objects.filter(customer=customer).order_by("-created_at", "-id")
             )
         ]
@@ -399,7 +459,9 @@ class CustomerHistory(APIView):
         }))
 
 
-class MergeCustomers(SuperView):
+class MergeCustomers(APIView):
+    permission_classes = [CanManageLeads]
+
     def post(self, request):
         try:
             primary = Customers.objects.get(pk=request.data.get("primary_customer_id"))

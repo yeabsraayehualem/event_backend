@@ -78,6 +78,10 @@ class Event(models.Model):
     guest_count = models.PositiveIntegerField(null=True, blank=True)
     location = models.CharField(max_length=255)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNING)
+    cost_budget = models.DecimalField(
+        "Cost budget", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="What the event may spend on vendors. Approved purchase orders count against it.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

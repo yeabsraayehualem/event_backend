@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python packages
 COPY requirements.txt /tmp/requirements.txt
+COPY packages ./packages
 RUN pip install --upgrade pip \
     && pip install -r /tmp/requirements.txt
 

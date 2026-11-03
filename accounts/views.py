@@ -85,7 +85,6 @@ class MyAccount(InternalView):
         serializer = self.userSerialiser(user)
 
         data = Formatter.success(data=serializer.data)
-        print(data)
 
         return Response(data)
 

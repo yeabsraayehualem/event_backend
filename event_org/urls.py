@@ -20,7 +20,9 @@ urlpatterns = [
     path("api/v1/event/", include("event.urls")),
     path("api/v1/finance/", include("finance.urls")),
     path("api/v1/chatter/", include("chatter.urls")),
-    path("api/v1/website/",include("website.urls"))
+    path("api/v1/website/",include("website.urls")),
+    path("api/v1/procurement/", include("procurement.urls")),
+    path("api/v1/hr/", include("hr.urls")),
 ]
 
 if settings.DEBUG:

@@ -173,3 +173,78 @@ class InvoiceLineTax(models.Model):
 
     def __str__(self):
         return f"{self.name}: {self.amount}"
+
+
+class ExpenseCategory(models.Model):
+    """What money was spent on, e.g. Vendor services, Freelance crew, Salaries, Fuel."""
+
+    name = models.CharField(max_length=100, unique=True)
+    sequence = models.PositiveIntegerField(default=0)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["sequence", "name"]
+        verbose_name_plural = "expense categories"
+
+    def __str__(self):
+        return self.name
+
+
+class Expense(models.Model):
+    """Money actually spent. Linked to an event it is an event cost; without one it is overhead.
+
+    A vendor bill points at the purchase order it pays (and optionally the payment milestone).
+    Freelancer payouts and payroll will create expenses here too, so every cost lives in one place.
+    """
+
+    class Source(models.TextChoices):
+        MANUAL = "manual", "Manual entry"
+        PURCHASE_ORDER = "purchase_order", "Vendor bill"
+        CREW_PAYOUT = "crew_payout", "Crew payout"
+        PAYROLL = "payroll", "Payroll"
+
+    class PaymentMethod(models.TextChoices):
+        CASH = "cash", "Cash"
+        BANK_TRANSFER = "bank_transfer", "Bank transfer"
+        CHECK = "check", "Check"
+        MOBILE_MONEY = "mobile_money", "Mobile money"
+
+    reference = models.CharField(max_length=20, unique=True, blank=True)
+    sequence = models.PositiveIntegerField(default=0)
+    date = models.DateField(default=timezone.localdate)
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.PROTECT, related_name="expenses")
+    description = models.CharField(max_length=255)
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.MANUAL)
+    event = models.ForeignKey(Event, on_delete=models.PROTECT, null=True, blank=True, related_name="expenses")
+    vendor = models.ForeignKey("procurement.Vendor", on_delete=models.PROTECT, null=True, blank=True, related_name="expenses")
+    purchase_order = models.ForeignKey("procurement.PurchaseOrder", on_delete=models.PROTECT, null=True, blank=True, related_name="bills")
+    scheduled_payment = models.OneToOneField(
+        "procurement.PurchaseOrderPayment", on_delete=models.SET_NULL, null=True, blank=True, related_name="bill",
+    )
+    payslip = models.ForeignKey("hr.Payslip", on_delete=models.PROTECT, null=True, blank=True, related_name="expenses")
+    shift = models.OneToOneField("hr.ShiftAssignment", on_delete=models.PROTECT, null=True, blank=True, related_name="expense")
+    payee = models.CharField(max_length=200, blank=True, help_text="Who was paid, when it isn't a registered vendor.")
+    amount = models.DecimalField("Amount (excl. VAT)", max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    tax = models.DecimalField("Tax", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.BANK_TRANSFER)
+    receipt_number = models.CharField(max_length=60, blank=True)
+    receipt = models.FileField(upload_to="expense_receipts/", blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-sequence"]
+
+    def __str__(self):
+        return f"{self.reference} – {self.description}"
+
+    def save(self, *args, **kwargs):
+        if not self.pk and not self.reference:
+            year = self.date.year if self.date else timezone.localdate().year
+            last = Expense.objects.filter(reference__startswith=f"EXP-{year}-").aggregate(value=Max("sequence"))["value"] or 0
+            self.sequence = last + 1
+            self.reference = f"EXP-{year}-{self.sequence:04d}"
+        self.total = (self.amount or Decimal("0.00")) + (self.tax or Decimal("0.00"))
+        super().save(*args, **kwargs)

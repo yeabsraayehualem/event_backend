@@ -1,3 +1,4 @@
+from utils.permissions import can_manage_leads
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -110,11 +111,11 @@ class LeadDetailSerializer(serializers.ModelSerializer):
 
     def get_can_assign_sales(self, _lead):
         request = self.context.get("request")
-        return bool(request and request.user.role == User.Role.SUPER)
+        return bool(request and can_manage_leads(request.user))
 
     def get_available_sales_people(self, _lead):
         request = self.context.get("request")
-        if not request or request.user.role != User.Role.SUPER:
+        if not request or not can_manage_leads(request.user):
             return []
         return [
             {"id": person.id, "name": person.get_full_name() or person.phone}
@@ -125,8 +126,8 @@ class LeadDetailSerializer(serializers.ModelSerializer):
 
     def validate_assigned_sales_person_id(self, _value):
         request = self.context.get("request")
-        if not request or request.user.role != User.Role.SUPER:
-            raise serializers.ValidationError("Only a super user can assign a sales person.")
+        if not request or not can_manage_leads(request.user):
+            raise serializers.ValidationError("Only an admin or super user can assign a sales person.")
         return _value
 
     def validate(self, attrs):
@@ -172,8 +173,8 @@ class CRMLeadCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"package_id": "Choose a package from the selected plan."})
         validate_event_type_for_plan(attrs.get("event_type"), attrs["plan"])
         request = self.context.get("request")
-        if attrs.get("assigned_sales_person") and (not request or request.user.role != User.Role.SUPER):
-            raise serializers.ValidationError({"assigned_sales_person_id": "Only a super user can assign another sales person."})
+        if attrs.get("assigned_sales_person") and (not request or not can_manage_leads(request.user)):
+            raise serializers.ValidationError({"assigned_sales_person_id": "Only an admin or super user can assign another sales person."})
         return attrs
 
     @transaction.atomic
